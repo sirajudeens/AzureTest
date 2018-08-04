@@ -1,0 +1,14 @@
+{
+    "vmssName": {
+        "value": "sirajsvmss18"
+    },
+    "instanceCount": {
+        "value": 1
+    },
+    "adminUsername": {
+        "value": "crptest"
+    },
+    "adminPassword": {
+        "value": "rdPa$$w0rd"
+    }
+}

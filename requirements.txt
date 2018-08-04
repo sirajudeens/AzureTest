@@ -1,0 +1,12 @@
+azure-mgmt-compute==3.0.1
+azure-mgmt-resources
+azure==2.0.0rc6
+cryptography
+lxml
+mock
+msrestazure
+nose
+tabulate
+azure-keyvault
+applicationinsights
+azure-mgmt-loganalytics
