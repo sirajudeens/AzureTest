@@ -1,5 +1,5 @@
 azure-mgmt-compute==3.0.1
-azure-mgmt-resources
+azure-mgmt-resource==0.30.0rc5
 azure==2.0.0rc6
 cryptography
 lxml
