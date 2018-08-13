@@ -211,38 +211,7 @@
                 },
 
                 "virtualMachineProfile": {
-                    "extensionProfile": {
-                        "extensions": [{
-                                "name": "MyCustomScript_3",
-                                "properties": {
-                                    "publisher": "Microsoft.Azure.Extensions",
-                                    "type": "CustomScript",
-                                    "typeHandlerVersion": "2.0",
-                                    "autoUpgradeMinorVersion": true,
-                                    "settings": {
-                                        "commandToExecute": "echo 'Hello World!'"
-                                    }
-                                }
-                            }, {
-                                "name": "MyNull_2",
-                                "properties": {
-                                    "publisher": "Microsoft.OSTCExtensions",
-                                    "type": "Null",
-                                    "typeHandlerVersion": "1.3",
-                                    "autoUpgradeMinorVersion": true
-                                }
-                            }, {
-                                "name": "MyBilling_1",
-                                "properties": {
-                                    "publisher": "Microsoft.AKS",
-                                    "type": "Compute.AKS.Linux.Billing",
-                                    "typeHandlerVersion": "1.0",
-                                    "autoUpgradeMinorVersion": true,
-                                    "settings": {}
-                                }
-                            }
-                        ]
-                    },
+                    "extensionProfile": {},
                     "storageProfile": {
                         "osDisk": {
                             "caching": "ReadOnly",

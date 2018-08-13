@@ -1,0 +1,10 @@
+# Python
+*.pyc
+__pycache__
+env/
+
+# Visual Studio local files
+.vs/
+.vscode/
+*.sln
+*.pyproj

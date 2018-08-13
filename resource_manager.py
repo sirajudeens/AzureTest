@@ -1,12 +1,7 @@
 
 from azure.common.credentials import ServicePrincipalCredentials
-from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.compute.models import VirtualMachineInstanceView
-from azure.mgmt.compute.models import VirtualMachinePaged
-from azure.mgmt.compute.models import RollingUpgradeStatusCode
-from azure.mgmt.compute.models import VirtualMachine
-from azure.mgmt.compute.models import VirtualMachineExtension
-from azure.mgmt.compute.models import VirtualMachineScaleSetExtension
+from azure.mgmt.compute import *
+from azure.mgmt.compute.models import *
 
 from msrestazure.azure_exceptions import CloudError
 
@@ -74,6 +69,24 @@ class VMSSComputeManager(ComputeManager):
             auto_upgrade_minor_version=True,
             settings=settings
         )
+
+    def add_vmss_extension(self,
+                           rg_name: str,
+                           vmss_name: str,
+                           location: str):
+        extensions = []
+        #extensions.append(VirtualMachineScaleSetExtension(
+        #    name='MyNull_from_python',
+        #    publisher='Microsoft.OSTCExtensions',
+        #    type='Null',
+        #    type_handler_version='1.3'))
+
+        ext_profile = VirtualMachineScaleSetExtensionProfile(extensions)
+        vmprofile = VirtualMachineScaleSetVMProfile(extension_profile=ext_profile)
+        vmss = VirtualMachineScaleSet(location=location, virtual_machine_profile=vmprofile)
+        poller = self.compute_client.virtual_machine_scale_sets.create_or_update(rg_name, vmss_name, vmss)
+        poller.wait()
+        return
 
     def add_or_update_vm_extension(self, 
                                    vmss_name: str,

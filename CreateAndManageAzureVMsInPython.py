@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 import argparse
@@ -7,18 +8,23 @@ from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.compute.models import DiskCreateOption
-
 from azure.mgmt.resource.resources.models import *
+
 from resource_manager import *
+from datetime import *
 
-SUBSCRIPTION_ID = '490850fb-3d19-4a56-bd61-856dded531b1'
-#SUBSCRIPTION_ID = '5393f919-a68a-43d0-9063-4b2bda6bffdf'
-GROUP_NAME = 'sirajs-rg'
-LOCATION = 'southcentralus'
+#SUBSCRIPTION_ID = '490850fb-3d19-4a56-bd61-856dded531b1'
+SUBSCRIPTION_ID = '5393f919-a68a-43d0-9063-4b2bda6bffdf'
+OBJECT_ID = '77cabe56-880f-4cc8-af19-9458fc5cd1ec'
+GROUP_NAME = 'sirajs-test'
+LOCATION = 'EastUS2EUAP'
 VM_NAME = 'sirajsVM'
+vmss_name = "sirajsvms"
 
-template_filename = "template-linux.json"
-#template_filename = "template-linux-ext.json"
+
+
+#template_filename = "template-linux.json"
+template_filename = "template-linux-ext.json"
 paramters_filename = "parameters.json"
 
 LOGGER = logging.getLogger(__name__)
@@ -53,38 +59,69 @@ def deploy_vmss():
     poller.wait()
 
 
-def parse_args(program):
-    parser = argparse.ArgumentParser(prog=program)
-    cmd_parsers = parser.add_subparsers(help="sub-command help", dest="command")
+def deploy_vmss_extensions_only():
+    cur_path = os.path.dirname(os.path.abspath(__file__))
 
-    create_test_profile_parser = cmd_parsers.add_parser("create-test-profile", help="Create test profiles by scenario")
-    create_test_profile_parser.add_argument('--scenarios', help="scenarios to create tests for", required=True)
-    create_test_profile_parser.add_argument("--config", help="environment configuration file", required=True)
-    create_test_profile_parser.add_argument("--secrets", help="environment secrets configuration file", required=True)
-    create_test_profile_parser.add_argument("--badge-sas", help="badge sas token", required=True)
-    create_test_profile_parser.add_argument("--enable-live-debug", help="enable live debugging", required=True)
-    create_test_profile_parser.add_argument("--jenkins-url", help="Jenkins url for this job", required=True)
-    create_test_profile_parser.add_argument("--job-name", help="Jenkins job", required=True)
+    ext_path = os.path.join(cur_path, "extensions.json")
+    with open(ext_path, "r") as ext_fh:
+        ext_json = json.load(ext_fh)
 
-    start_test_parser = cmd_parsers.add_parser("start-testing", help="start testing")
-    start_test_parser.add_argument('--test-profile-path', help="test config file path", required=True)
-    start_test_parser.add_argument("--logfile", help="name of the log file, defaults to ./debug.log", required=False, default="debug.log")
-    start_test_parser.add_argument("--log-saving-dir", help="directory to store harvested logs", required=True)
-    start_test_parser.add_argument("--results-dir", help="directory to store test results", required=True)
+    resources = ext_json['resources']
+    vmss = next((res for res in resources if res['type'] == 'Microsoft.Compute/virtualMachineScaleSets'), None)
+    if (vmss is None):
+        print("VMSS not found")
+        return
+    else:
+        vmss['name'] = vmss_name
 
-    clean_up_parser = cmd_parsers.add_parser("clean-up", help="clean up resources used during tests")
-    clean_up_parser.add_argument('--config', help="environment configuration file", required=True)
-    clean_up_parser.add_argument('--secrets', help="environment secrets configuration file", required=True)
-    clean_up_parser.add_argument('--rg-name-file', help="file containing resource group names to be cleaned up", required=True)
-    clean_up_parser.add_argument("--logfile", help="name of the log file, defaults to ./debug.log", required=False, default="cleanup.log")
-    args = parser.parse_args()
-    return args
+        props = DeploymentProperties(template=ext_json,
+                                     mode=DeploymentMode.incremental)
+        poller = resource_group_client.deployments.create_or_update(GROUP_NAME, 'TestDeployment', props)
+        poller.wait()
+
+def remove_all_extensions():
+    ext_profile = VirtualMachineScaleSetExtensionProfile()
+    vmss_vm_profile = VirtualMachineScaleSetVMProfile(extension_profile=ext_profile)
+    vmss = VirtualMachineScaleSet(location=LOCATION, virtual_machine_profile=vmss_vm_profile)
+    poller = compute_client.virtual_machine_scale_sets.create_or_update(GROUP_NAME, vmss_name, vmss)
+    poller.wait()
 
 
-def main(program):
-    args = parse_args(program)
-    print (args)
+def get_dependency_map() -> dict:
+    dependency_map = dict()
 
+    # Read extensions template
+    cur_path = os.path.dirname(os.path.abspath(__file__))
+
+    ext_path = os.path.join(cur_path, "extensions.json")
+    with open(ext_path, "r") as ext_fh:
+        ext_json = json.load(ext_fh)
+
+    resources = ext_json['resources']
+    vmss = next((res for res in resources if res['type'] == 'Microsoft.Compute/virtualMachineScaleSets'))
+    extensions = vmss['properties']['virtualMachineProfile']['extensionProfile']['extensions']
+
+    for ext in extensions:
+        ext_name = ext['name']
+        dependsOn = ext['properties'].get('dependsOn')
+        dependency_map[ext_name] = dependsOn
+
+    return dependency_map
+
+def validate_extension_sequencing(dependency_map, sorted_ext_names) -> bool:
+    installed_ext = dict()
+
+    for ext in sorted_ext_names:
+        # Check if the depending extension are already installed
+        if (dependency_map[ext] != None):
+            for dep in dependency_map[ext]:
+                if installed_ext.get(dep) is None:
+                    # The dependending extension is not installed prior to the current extension
+                    return False
+
+        # Mark the current extension as installed
+        installed_ext[ext] = ext
+    return True 
 
 if __name__ == "__main__":
 
@@ -112,8 +149,9 @@ if __name__ == "__main__":
         #input('Resource group created. Press enter to continue...')
 
     #deploy_vmss()
+    remove_all_extensions()
+    deploy_vmss_extensions_only()
 
-    vmss_name = "sirajsvms"
     compute_manager = VMSSComputeManager(credentials, SUBSCRIPTION_ID, GROUP_NAME, LOCATION, LOGGER)
     #compute_manager.add_or_update_vm_extension(vmss_name, "myExt")
     #compute_manager.add_null_extension(vmss_name, "MyNull2")
@@ -123,11 +161,51 @@ if __name__ == "__main__":
     #                                                                                                   type_handler_version='1.0',
     #                                                                                                   auto_upgrade_minor_version=True))
 
-    vmss_instance = compute_manager.get_vmss_instance_view(GROUP_NAME, vmss_name)
-    vmss_vm_extension = compute_manager.get_extensions_from_instance_view(vmss_instance)
+    #compute_manager.add_vmss_extension(GROUP_NAME, vmss_name, LOCATION)
 
-    if (vmss_vm_extension is None):
-        printf("No extesion found")
+    vmss_instance = compute_manager.get_vmss_instance_view(GROUP_NAME, vmss_name)
+    vmss_vm_extensions = compute_manager.get_extensions_from_instance_view(vmss_instance)
+
+    if (vmss_vm_extensions is None):
+        print("No extesion found")
     else:
-        for ext in vmss_vm_extension:
-            print("Extension: {0}".format(ext))
+        ext_status= []
+        for ext in vmss_vm_extensions:
+            ext_status += [{'name': ext.name, 'status': ext.statuses[0]}]
+            print("Extension {0} enabled at : {1}".format(ext.name, ext.statuses[0].time))
+
+        sorted_ext = sorted(ext_status, key = lambda e : e['status'].time if e['status'].time != None else datetime.min.replace(tzinfo=timezone.utc))
+        print("Sorted extensions: {0}".format(sorted_ext))
+
+
+        sorted_extensions = sorted(vmss_vm_extensions,
+                                   key = lambda ext : ext.statuses[0].time if ext.statuses[0].time != None else datetime.min.replace(tzinfo=timezone.utc))
+        sorted_ext_names = [e.name for e in sorted_extensions]
+
+    dependency_map = get_dependency_map()
+    print("Dependency Map: {0}".format(dependency_map))
+
+
+    result = validate_extension_sequencing(dependency_map, sorted_ext_names)
+
+    #cur_path = os.path.dirname(os.path.abspath(__file__))
+    #template_path = os.path.join(cur_path, "template-linux-ext.json")
+    #with open(template_path, "r") as template_fh:
+    #    template_json = json.load(template_fh)
+
+    #ext_path = os.path.join(cur_path, "extensions.json")
+    #with open(ext_path, "r") as ext_fh:
+    #    ext_json = json.load(ext_fh)
+
+    #resources = template_json['resources']
+    #vmss = next((res for res in resources if res['type'] == 'Microsoft.Compute/virtualMachineScaleSets'), None)
+    #if (vmss is None):
+    #    print("VMSS not found")
+    #else:
+    #    if (vmss.get('properties') is None):
+    #        vmss['properties'] = {}
+
+    #    if (vmss['properties'].get('virtualMachineProfile') is None):
+    #        vmss['properties']['virtualMachineProfile'] = {}
+
+    #    vmss['properties']['virtualMachineProfile']['extensionProfile'] = ext_json
